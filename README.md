@@ -1,4 +1,4 @@
-# opencode-claude-usage-plugin
+# opencode-claude-usage
 
 An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your Claude subscription's 5-hour and 7-day usage as compact gauges with reset countdowns.
 
@@ -33,14 +33,14 @@ Add the package to `~/.config/opencode/cli.json`:
 ```jsonc
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["opencode-claude-usage-plugin"],
+  "plugins": ["opencode-claude-usage"],
 }
 ```
 
 ### From source
 
 ```sh
-git clone https://github.com/verrannt/opencode-claude-usage-plugin.git
+git clone https://github.com/verrannt/opencode-claude-usage.git
 ```
 
 Then either point `cli.json` at the clone:
@@ -48,7 +48,7 @@ Then either point `cli.json` at the clone:
 ```jsonc
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["/absolute/path/to/opencode-claude-usage-plugin"],
+  "plugins": ["/absolute/path/to/opencode-claude-usage"],
 }
 ```
 
@@ -63,7 +63,7 @@ Pass options with the object form in `cli.json`:
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     {
-      "package": "opencode-claude-usage-plugin",
+      "package": "opencode-claude-usage",
       "options": { "compact": true },
     },
   ],

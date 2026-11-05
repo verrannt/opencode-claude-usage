@@ -1,5 +1,5 @@
 {
-  "name": "opencode-claude-usage-plugin",
+  "name": "opencode-claude-usage",
   "version": "0.1.0",
   "description": "OpenCode TUI sidebar plugin that shows Claude subscription 5-hour and 7-day usage gauges with reset times.",
   "keywords": [
@@ -11,13 +11,13 @@
     "tui",
     "usage"
   ],
-  "homepage": "https://github.com/verrannt/opencode-claude-usage-plugin#readme",
+  "homepage": "https://github.com/verrannt/opencode-claude-usage#readme",
   "bugs": {
-    "url": "https://github.com/verrannt/opencode-claude-usage-plugin/issues"
+    "url": "https://github.com/verrannt/opencode-claude-usage/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/verrannt/opencode-claude-usage-plugin.git"
+    "url": "git+https://github.com/verrannt/opencode-claude-usage.git"
   },
   "license": "MIT",
   "author": "Pascal Schröder",
