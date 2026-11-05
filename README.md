@@ -26,16 +26,13 @@ It's meant for people who use OpenCode's **Claude Agent** provider, which signs 
 
 ## Install
 
-### From npm
+### With the OpenCode CLI
 
-Add the package to `~/.config/opencode/cli.json`:
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["opencode-claude-usage"],
-}
+```sh
+opencode plugin add github:verrannt/opencode-claude-usage
 ```
+
+This installs the plugin from GitHub and adds `"github:verrannt/opencode-claude-usage"` to the `plugins` list in `~/.config/opencode/cli.json`. Update it later with `opencode plugin update`.
 
 ### From source
 
@@ -63,7 +60,7 @@ Pass options with the object form in `cli.json`:
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     {
-      "package": "opencode-claude-usage",
+      "package": "github:verrannt/opencode-claude-usage",
       "options": { "compact": true },
     },
   ],
