@@ -1,6 +1,8 @@
-// Sidebar gauges for Claude subscription usage (5h + 7d), modelled on
-// @davidaayers/opencode-codex-usage-plugin. Plain JS against the opentui Solid runtime,
-// so no JSX build step is needed.
+// Sidebar gauges for Claude subscription usage (5h + 7d). Plain JS against the opentui
+// Solid runtime, so no JSX build step is needed.
+// The palette, level colours, gauge layout, session/sidebar checks, compact text and slot
+// wiring are adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see
+// THIRD_PARTY_NOTICES.md.
 import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes } from "@opentui/core"
 import {

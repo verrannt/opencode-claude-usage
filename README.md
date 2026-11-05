@@ -8,7 +8,7 @@ Claude Usage
 11% · 1h30m        9% · 1d17h
 ```
 
-It's meant for people who use OpenCode's **Claude Agent** provider, which signs in with Claude Code (`claude auth login`) and counts against your Pro/Max plan limits. The presentation is modelled on [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which does the same for Codex.
+It's meant for people who use OpenCode's **Claude Agent** provider, which signs in with Claude Code (`claude auth login`) and counts against your Pro/Max plan limits. The presentation is adapted from [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which does the same for Codex (see [Credits](#credits)).
 
 ## Features
 
@@ -92,6 +92,15 @@ npm test
 
 `usage.js` holds credential lookup, the API call and formatting, and has unit tests. `tui.js` holds the sidebar and footer views.
 
+## Credits
+
+The gauge display and sidebar logic are adapted from
+[@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin)
+by David Ayers, itself a fork of
+[zaniluca/opencode-codex-usage-plugin](https://github.com/zaniluca/opencode-codex-usage-plugin)
+by Luca Zani, both under the MIT license. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+for the adapted parts and the original license notice.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Third-party portions: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

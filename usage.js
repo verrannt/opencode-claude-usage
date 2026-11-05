@@ -80,6 +80,7 @@ export function shortReset(resetsAt, now = Date.now()) {
   return `${Math.floor(hours / 24)}d${hours % 24}h`
 }
 
+// Adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see THIRD_PARTY_NOTICES.md.
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
 export function gauge(percent, width) {
