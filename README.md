@@ -15,7 +15,8 @@ It's meant for people who use OpenCode's **Claude Agent** provider, which signs 
 - **Two gauges**: the 5-hour session window and the 7-day weekly window, with time until each one resets.
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
 - **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window in the prompt footer, e.g. `Claude 5h 11%`.
-- **Live updates**: every 60 seconds, after each model step (at most every 15 seconds), and on demand with `/claude-usage` or **Refresh Claude usage** in the command palette.
+- **Gentle on the rate limit**: refreshes every 5 minutes by default, shares one cache and request schedule across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when the endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
+- **Manual refresh**: `/claude-usage` or **Refresh Claude usage** in the command palette (at most every 30 seconds, never during a backoff).
 - **Shows only for Claude Agent sessions**: hidden when the session uses another provider.
 - **No build step or dependencies**: plain JavaScript against the OpenCode-provided Solid/OpenTUI runtime.
 
@@ -71,13 +72,15 @@ Pass options with the object form in `cli.json`:
 | --------- | --------- | ------- | ------------------------------------------------------------------------------- |
 | `compact` | `boolean` | `false` | Always use the compact footer line, e.g. when you hide the sidebar manually.    |
 | `always`  | `boolean` | `false` | Show usage in every session, not only sessions on the Claude Agent provider.    |
+| `refreshMinutes` | `number` | `5` | Minutes between usage requests (minimum 1). Lower values hit the endpoint's rate limit sooner. |
 
 ## How it works
 
 - **Credentials**: the plugin reads Claude Code's OAuth access token, from the macOS keychain (`Claude Code-credentials`) or from `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`) on other systems. The token is only sent to `api.anthropic.com`.
 - **Usage source**: `GET https://api.anthropic.com/api/oauth/usage`, the endpoint behind Claude Code's `/usage` command.
 - **No token refresh**: the plugin never refreshes the token itself, because rotating the refresh token could sign Claude Code out. If the token has expired, the sidebar says so until Claude Code or the Claude Agent provider refreshes it on its next request.
-- On a temporary failure, the last good numbers stay on screen.
+- **Shared cache**: the latest result and the request schedule live in `~/.cache/opencode-claude-usage/usage.json` (or under `$XDG_CACHE_HOME`). It holds usage numbers and timestamps only, never credentials. Every OpenCode window reads it every 30 seconds and only sends a request when one is due, so several windows cost no more requests than one.
+- **Rate limits**: the endpoint is rate limited per account, and Claude Code's own `/usage` counts against the same limit. On HTTP 429 the plugin waits 5 minutes, doubling up to 30 minutes on repeated 429s, or longer if the server sends a `retry-after`.
 
 ## Limitations
 

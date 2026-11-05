@@ -15,11 +15,12 @@ import {
   useTerminalDimensions,
 } from "@opentui/solid"
 import { createMemo, createSignal, onCleanup } from "solid-js"
-import { fetchUsage, formatPercent, gauge, shortReset } from "./usage.js"
+import { formatPercent, gauge, loadUsage, shortReset, statusNote } from "./usage.js"
 
 const PROVIDER_ID = "claude-agent"
-const POLL_MS = 60_000
-const MIN_REFRESH_MS = 15_000
+const DEFAULT_REFRESH_MINUTES = 5
+// How often the shared cache file is re-read; a request is only sent when one is due.
+const TICK_MS = 30_000
 const LAYOUT_WIDTH = 32
 const COLUMN_GAP = 2
 const LABEL_WIDTH = 3
@@ -75,25 +76,24 @@ function isSidebarVisible(api, sessionID, width) {
   return api.options.compact !== true && width > 120
 }
 
-// One poller shared by every view; it only hits the network while some view wants data.
+function refreshMs(api) {
+  const minutes = Number(api.options.refreshMinutes)
+  return Math.max(1, Number.isFinite(minutes) ? minutes : DEFAULT_REFRESH_MINUTES) * 60_000
+}
+
+// One store shared by every view, backed by the cross-window cache in usage.js. It only
+// touches the cache (and possibly the network) while some view wants data.
 function createStore(api) {
-  const [state, setState] = createSignal({ status: "loading", usage: null, message: "Loading..." })
+  const [entry, setEntry] = createSignal({ loading: true })
   const [now, setNow] = createSignal(Date.now())
   let demand = 0
   let inFlight
-  let lastFetch = 0
 
   const refresh = (force = false) => {
     if (demand === 0 || inFlight) return inFlight
-    if (!force && Date.now() - lastFetch < MIN_REFRESH_MS) return
-    lastFetch = Date.now()
-    inFlight = fetchUsage()
-      .then((usage) => setState({ status: "ready", usage, message: "" }))
-      .catch((error) => {
-        const message = error?.message ?? "Usage unavailable"
-        // Keep showing the last good numbers on a transient failure.
-        setState((prev) => (prev.usage ? { ...prev, message } : { status: "error", usage: null, message }))
-      })
+    inFlight = loadUsage({ intervalMs: refreshMs(api), force })
+      .then((next) => setEntry(next))
+      .catch((error) => setEntry((prev) => ({ ...prev, loading: false, error: error?.message ?? "Usage unavailable" })))
       .finally(() => {
         inFlight = undefined
         setNow(Date.now())
@@ -102,25 +102,19 @@ function createStore(api) {
     return inFlight
   }
 
-  const poll = setInterval(() => refresh(true), POLL_MS)
-  const tick = setInterval(() => setNow(Date.now()), 30_000)
-  const stopEvents = api.data.listen(({ details }) => {
-    if (details.type === "session.step.ended" || details.type === "session.usage.updated") refresh()
-  })
+  const tick = setInterval(() => refresh(), TICK_MS)
 
   return {
-    state,
+    entry,
     now,
     refresh,
     want() {
       demand++
-      if (demand === 1) refresh(true)
+      if (demand === 1) refresh()
       return () => demand--
     },
     dispose() {
-      clearInterval(poll)
       clearInterval(tick)
-      stopEvents()
     },
   }
 }
@@ -185,7 +179,8 @@ function SidebarView(api, store, sessionID) {
   const visible = createMemo(() => isClaudeSession(api, sessionID()))
   useDemand(store, visible)
   const theme = () => palette(api)
-  const usage = createMemo(() => store.state().usage)
+  const usage = createMemo(() => store.entry().usage)
+  const note = () => statusNote(store.entry(), store.now())
   return h(
     "box",
     { visible },
@@ -198,9 +193,19 @@ function SidebarView(api, store, sessionID) {
             () => {
               const current = usage()
               if (current) return Gauges(api, store, current)
-              const { status, message } = store.state()
-              return h("text", { fg: () => (status === "error" ? theme().warning : theme().muted) }, message)
+              if (store.entry().loading) return h("text", { fg: () => theme().muted }, "Loading...")
+              if (!note()) return h("text", { fg: () => theme().muted }, "No usage yet")
+              return null
             },
+            // With numbers on screen, a failure is a muted note; without them it's a warning.
+            () =>
+              note()
+                ? h(
+                    "text",
+                    { fg: () => (usage() ? theme().muted : theme().warning), width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
+                    note,
+                  )
+                : null,
           )
         : h("box"),
   )
@@ -213,8 +218,8 @@ function CompactView(api, store, sessionID) {
   )
   useDemand(store, visible)
   const text = () => {
-    const usage = store.state().usage
-    if (!usage) return store.state().status === "loading" ? "Claude ..." : ""
+    const usage = store.entry().usage
+    if (!usage) return store.entry().loading ? "Claude ..." : ""
     const windows = [
       ["5h", usage.fiveHour],
       ["7d", usage.sevenDay],
