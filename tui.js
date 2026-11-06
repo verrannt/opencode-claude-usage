@@ -237,7 +237,7 @@ function AccountView(api, store, account) {
       "text",
       { width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
       h("span", { style: () => ({ fg: theme().text }) }, account.label),
-      account.marked ? h("span", { style: () => ({ fg: theme().success }) }, " ✓") : null,
+      account.marked ? h("span", { style: () => ({ fg: theme().text }) }, " ✓") : null,
     ),
     entry.usage
       ? Gauges(api, store, entry.usage)
