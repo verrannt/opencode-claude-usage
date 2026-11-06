@@ -4,6 +4,7 @@ An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your subscripti
 
 ```text
 Usage
+Cache ████████████▍░░░░░  41m12s
 Claude
 5h  ███▍░░░░░░░  7d  █▎░░░░░░░░░
 31% · 2h10m        11% · 1d17h
@@ -21,6 +22,7 @@ It's meant for people who use OpenCode with subscription logins rather than API 
 
 - **All your accounts**: Claude, plus one section per ChatGPT login stored in OpenCode, labelled with the name OpenCode gave the login. With several ChatGPT logins, `●` marks the one OpenCode currently uses.
 - **Same layout for every account**: a 5-hour and a 7-day column, with time until each window resets. When a plan has no 5-hour window (some Codex plans only have a weekly one), that column shows a dashed bar and `n/a`.
+- **Prompt-cache countdown**: an estimate of how long the current session's prompt cache stays warm, counting down every second from the session's last model request (`active` while a request runs, `expired` afterwards). See [Prompt cache estimate](#prompt-cache-estimate).
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
 - **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window of the account the session uses, e.g. `Claude 5h 31%` or `Codex 7d 2%`.
 - **Gentle on rate limits**: refreshes every 5 minutes by default, shares one cache and request schedule per account across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when an endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
@@ -62,7 +64,7 @@ Then either point `cli.json` at the clone:
 }
 ```
 
-or copy `tui.js`, `usage.js`, `claude.js`, `codex.js` and `package.json` into `~/.config/opencode/plugins/claude-usage/`, where OpenCode discovers plugins without any configuration. Use only one of these, or the plugin loads twice.
+or copy `tui.js`, `usage.js`, `claude.js`, `codex.js`, `cache.js` and `package.json` into `~/.config/opencode/plugins/claude-usage/`, where OpenCode discovers plugins without any configuration. Use only one of these, or the plugin loads twice.
 
 ## Configuration
 
@@ -84,6 +86,7 @@ Pass options with the object form in `cli.json`:
 | ---------------- | --------- | ------- | ----------------------------------------------------------------------------------------------- |
 | `compact`        | `boolean` | `false` | Always use the compact footer line, e.g. when you hide the sidebar manually.                    |
 | `refreshMinutes` | `number`  | `5`     | Minutes between usage requests per account (minimum 1). Lower values hit rate limits sooner.   |
+| `cacheMinutes`   | `object`  | `{ "claude-agent": 60, "openai": 30 }` | Prompt-cache lifetime per provider ID for the countdown. Add a provider to show the countdown for it too. |
 
 To rename a Codex section, rename the login in OpenCode; the plugin uses its label.
 
@@ -97,6 +100,15 @@ To rename a Codex section, rename the login in OpenCode; the plugin uses its lab
 - **Shared cache**: the latest result and request schedule for each account live in `~/.cache/opencode-claude-usage/` (or under `$XDG_CACHE_HOME`), one file per account named `claude.json` or `codex-<credential id>.json`. They hold usage numbers and timestamps only, never credentials. Every OpenCode window reads them every 30 seconds and only sends a request when one is due, so several windows cost no more requests than one.
 - **Rate limits**: the endpoints are rate limited per account, and Claude Code's own `/usage` counts against the same Claude limit. On HTTP 429 the plugin waits 5 minutes, doubling up to 30 minutes on repeated 429s, or longer if the server sends a `retry-after`.
 
+## Prompt cache estimate
+
+No provider reports how long a prompt cache has left, so the countdown is an estimate: the provider's cache lifetime minus the time since the session's last model request. A request that reads the cache renews its lifetime, so each step restarts the countdown. The line is hidden for providers without a configured lifetime and when the last step didn't use the cache.
+
+- **Claude Agent: 60 minutes.** Claude Code labels its cache writes as 5-minute entries, but in practice its caches survive pauses of up to about an hour and are gone after that. That's what the author measured across several hundred pauses in their own sessions; it isn't documented behaviour, so set `cacheMinutes` if yours differs.
+- **OpenAI (ChatGPT sign-in): 30 minutes.** OpenAI documents a 30-minute minimum cache lifetime for GPT-5.6 and later models on the Responses API, which OpenCode uses. Entries are sometimes kept longer.
+
+A cache can still be evicted early, so treat the time left as an upper bound. Changing the start of the prompt (model, instructions, tools) also starts a new cache, which the estimate can't see.
+
 ## Limitations
 
 - Neither usage endpoint is documented or officially supported by Anthropic or OpenAI; either may change or disappear.
@@ -109,7 +121,7 @@ To rename a Codex section, rename the login in OpenCode; the plugin uses its lab
 npm test
 ```
 
-`usage.js` holds request handling, the per-account cache with backoff, and formatting. `claude.js` and `codex.js` read each service's credentials and usage. `tui.js` holds the sidebar and footer views. Everything except `tui.js` has unit tests.
+`usage.js` holds request handling, the per-account cache with backoff, and formatting. `claude.js` and `codex.js` read each service's credentials and usage. `cache.js` estimates the prompt-cache time left. `tui.js` holds the sidebar and footer views. Everything except `tui.js` has unit tests.
 
 ## Credits
 

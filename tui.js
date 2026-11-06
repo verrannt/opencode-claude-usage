@@ -15,6 +15,7 @@ import {
   useTerminalDimensions,
 } from "@opentui/solid"
 import { createMemo, createSignal, onCleanup } from "solid-js"
+import { cacheState, formatCountdown, lastStep } from "./cache.js"
 import { fetchClaudeUsage } from "./claude.js"
 import { fetchCodexUsage, isCodexCredential } from "./codex.js"
 import { cachePath, formatPercent, gauge, gaugeColumns, loadUsage, shortReset, statusNote } from "./usage.js"
@@ -28,6 +29,8 @@ const TICK_MS = 30_000
 const LAYOUT_WIDTH = 32
 const COLUMN_GAP = 2
 const LABEL_WIDTH = 3
+const CACHE_LABEL_WIDTH = 6
+const CACHE_TEXT_WIDTH = 7
 
 // Minimal hyperscript over the Solid universal renderer: function props/children are reactive.
 function h(tag, props = {}, ...children) {
@@ -253,13 +256,65 @@ function AccountView(api, store, account) {
   )
 }
 
-function SidebarView(api, store) {
+// Estimated prompt-cache lifetime left for this session, counting down every second.
+function CacheView(api, sessionID) {
+  const theme = () => palette(api)
+  const [now, setNow] = createSignal(Date.now())
+  const timer = setInterval(() => {
+    setNow(Date.now())
+    api.renderer.requestRender()
+  }, 1000)
+  onCleanup(() => clearInterval(timer))
+  const state = createMemo(() =>
+    cacheState({
+      step: lastStep(api.data.session.message.list(sessionID()) ?? []),
+      running: api.data.session.status(sessionID()) === "running",
+      now: now(),
+      overrides: api.options.cacheMinutes,
+    }),
+  )
+  // Rebuild the row only when the status changes; the countdown updates in place.
+  const status = createMemo(() => state().status)
+  const barWidth = LAYOUT_WIDTH - CACHE_LABEL_WIDTH - 1 - CACHE_TEXT_WIDTH
+  return () => {
+    const current = status()
+    if (current === "none") return null
+    const label = h("text", { fg: () => theme().muted }, "Cache".padEnd(CACHE_LABEL_WIDTH))
+    if (current === "expired") {
+      return h(
+        "box",
+        { flexDirection: "row" },
+        label,
+        h("text", { fg: () => theme().muted }, `${"─".repeat(barWidth)} ${"expired".padStart(CACHE_TEXT_WIDTH)}`),
+      )
+    }
+    // Colour by how much of the lifetime has passed, like the usage gauges.
+    const color = () => levelColor((1 - state().fraction) * 100, theme())
+    const bar = () => gauge(state().fraction * 100, barWidth)
+    const text = () => (state().status === "running" ? "active" : formatCountdown(state().remainingMs))
+    return h(
+      "box",
+      { flexDirection: "row" },
+      label,
+      h(
+        "text",
+        { flexShrink: 0, width: barWidth + 1 + CACHE_TEXT_WIDTH, wrapMode: "none" },
+        h("span", { style: () => ({ fg: color() }) }, () => bar().fill),
+        h("span", { style: () => ({ fg: theme().muted }) }, () => bar().track),
+        h("span", { style: () => ({ fg: theme().muted }) }, () => ` ${text().padStart(CACHE_TEXT_WIDTH)}`),
+      ),
+    )
+  }
+}
+
+function SidebarView(api, store, sessionID) {
   useDemand(store, () => true)
   const theme = () => palette(api)
   return h(
     "box",
     { flexDirection: "column" },
     h("text", { fg: () => theme().text, attributes: TextAttributes.BOLD }, "Usage"),
+    CacheView(api, sessionID),
     () => {
       const accounts = store.accounts()
       if (!accounts) return h("text", { fg: () => theme().muted }, "Loading...")
@@ -303,7 +358,7 @@ export default Plugin.define({
     const store = createStore(api)
     const sidebar = api.ui.slot({
       prepend: "sidebar.content",
-      render: () => SidebarView(api, store),
+      render: (props) => SidebarView(api, store, () => props.sessionID),
     })
     const compact = api.ui.slot({
       append: "prompt.footer.status",

@@ -30,6 +30,7 @@
     "usage.js",
     "claude.js",
     "codex.js",
+    "cache.js",
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
