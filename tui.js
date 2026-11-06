@@ -17,7 +17,7 @@ import {
 import { createMemo, createSignal, onCleanup } from "solid-js"
 import { fetchClaudeUsage } from "./claude.js"
 import { fetchCodexUsage, isCodexCredential } from "./codex.js"
-import { cachePath, formatPercent, gauge, loadUsage, shortReset, statusNote } from "./usage.js"
+import { cachePath, formatPercent, gauge, gaugeColumns, loadUsage, shortReset, statusNote } from "./usage.js"
 
 const CLAUDE_PROVIDER_ID = "claude-agent"
 const OPENAI_PROVIDER_ID = "openai"
@@ -199,14 +199,27 @@ function Gauge(api, store, window, width) {
   )
 }
 
+// A window the plan doesn't have: a dashed bar and "n/a", so every account keeps the same columns.
+function UnavailableGauge(api, label, width) {
+  const muted = () => palette(api).muted
+  return h(
+    "box",
+    { flexDirection: "column", flexShrink: 0, width },
+    h("text", { fg: muted, width, wrapMode: "none" }, `${label.padEnd(LABEL_WIDTH)} ${"─".repeat(width - LABEL_WIDTH - 1)}`),
+    h("text", { fg: muted }, "n/a"),
+  )
+}
+
 function Gauges(api, store, usage) {
-  const windows = (usage.windows ?? []).slice(0, 2)
-  if (windows.length === 0) return h("text", { fg: () => palette(api).muted }, "No usage windows")
-  const width = windows.length === 1 ? LAYOUT_WIDTH : (LAYOUT_WIDTH - COLUMN_GAP) / 2
+  const columns = gaugeColumns(usage.windows)
+  if (columns.length === 0) return h("text", { fg: () => palette(api).muted }, "No usage windows")
+  const width = columns.length === 1 ? LAYOUT_WIDTH : (LAYOUT_WIDTH - COLUMN_GAP) / 2
   return h(
     "box",
     { flexDirection: "row", width: LAYOUT_WIDTH, columnGap: COLUMN_GAP },
-    windows.map((window) => Gauge(api, store, window, width)),
+    columns.map((column) =>
+      column.unavailable ? UnavailableGauge(api, column.label, width) : Gauge(api, store, column, width),
+    ),
   )
 }
 

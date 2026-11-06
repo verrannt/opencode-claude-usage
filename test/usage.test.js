@@ -10,6 +10,7 @@ import {
   cachePath,
   formatPercent,
   gauge,
+  gaugeColumns,
   loadUsage,
   shortReset,
   statusNote,
@@ -148,6 +149,17 @@ test("parseCodexUsage maps windows by duration, shortest first", () => {
   ])
   assert.deepEqual(parseCodexUsage({ rate_limit: { primary_window: null, secondary_window: null } }), { windows: [] })
   assert.deepEqual(parseCodexUsage(undefined), { windows: [] })
+})
+
+test("gaugeColumns keeps 5h | 7d columns and marks a missing window unavailable", () => {
+  const fiveHour = { label: "5h", usedPercent: 10, resetsAt: null }
+  const week = { label: "7d", usedPercent: 64, resetsAt: null }
+  assert.deepEqual(gaugeColumns([fiveHour, week]), [fiveHour, week])
+  assert.deepEqual(gaugeColumns([week]), [{ label: "5h", unavailable: true }, week])
+  assert.deepEqual(gaugeColumns([fiveHour]), [fiveHour, { label: "7d", unavailable: true }])
+  const month = { label: "30d", usedPercent: 5, resetsAt: null }
+  assert.deepEqual(gaugeColumns([month]), [month])
+  assert.deepEqual(gaugeColumns([]), [])
 })
 
 test("windowLabel names known and unknown windows", () => {

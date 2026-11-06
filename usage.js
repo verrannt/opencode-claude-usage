@@ -120,6 +120,14 @@ export function shortReset(resetsAt, now = Date.now()) {
   return `${Math.floor(hours / 24)}d${hours % 24}h`
 }
 
+// Fixed 5h | 7d columns when the service reports only those windows, marking a missing one as
+// unavailable so every account has the same layout. Other windows are shown as reported.
+export function gaugeColumns(windows = []) {
+  const fixed = ["5h", "7d"]
+  if (windows.length === 0 || !windows.every((window) => fixed.includes(window.label))) return windows.slice(0, 2)
+  return fixed.map((label) => windows.find((window) => window.label === label) ?? { label, unavailable: true })
+}
+
 // Status note shown under an account's gauges, or alone before any usage has loaded.
 export function statusNote(entry, now = Date.now()) {
   if (!entry?.error) return ""

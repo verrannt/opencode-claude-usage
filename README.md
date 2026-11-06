@@ -8,11 +8,11 @@ Claude
 5h  ███▍░░░░░░░  7d  █▎░░░░░░░░░
 31% · 2h10m        11% · 1d17h
 Codex · OpenAI
-7d  █████████████████▉░░░░░░░░░
-66% · 4d16h
+5h  ───────────  7d  ███████▎░░░
+n/a                66% · 4d16h
 Codex · OpenAI 2 ●
-7d  ▌░░░░░░░░░░░░░░░░░░░░░░░░░░
-2% · 6d23h
+5h  ───────────  7d  ▎░░░░░░░░░░
+n/a                2% · 6d23h
 ```
 
 It's meant for people who use OpenCode with subscription logins rather than API keys: the **Claude Agent** provider, which signs in with Claude Code (`claude auth login`), and the **OpenAI** provider's **Sign in with ChatGPT**. The presentation is adapted from [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which shows Codex usage for the Codex CLI's account (see [Credits](#credits)).
@@ -20,7 +20,7 @@ It's meant for people who use OpenCode with subscription logins rather than API 
 ## Features
 
 - **All your accounts**: Claude, plus one section per ChatGPT login stored in OpenCode, labelled with the name OpenCode gave the login. With several ChatGPT logins, `●` marks the one OpenCode currently uses.
-- **Every window the service reports**: Claude's 5-hour and 7-day windows; for Codex, whatever your plan has (for example only a weekly window on some plans), with time until each one resets.
+- **Same layout for every account**: a 5-hour and a 7-day column, with time until each window resets. When a plan has no 5-hour window (some Codex plans only have a weekly one), that column shows a dashed bar and `n/a`.
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
 - **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window of the account the session uses, e.g. `Claude 5h 31%` or `Codex 7d 2%`.
 - **Gentle on rate limits**: refreshes every 5 minutes by default, shares one cache and request schedule per account across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when an endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
