@@ -30,7 +30,7 @@ const LAYOUT_WIDTH = 32
 const COLUMN_GAP = 2
 const LABEL_WIDTH = 3
 const CACHE_LABEL_WIDTH = 6
-const CACHE_TEXT_WIDTH = 7
+const CACHE_WARNING_MS = 2 * 60_000
 
 // Minimal hyperscript over the Solid universal renderer: function props/children are reactive.
 function h(tag, props = {}, ...children) {
@@ -237,7 +237,7 @@ function AccountView(api, store, account) {
       "text",
       { width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
       h("span", { style: () => ({ fg: theme().text }) }, account.label),
-      account.marked ? h("span", { style: () => ({ fg: theme().success }) }, " ●") : null,
+      account.marked ? h("span", { style: () => ({ fg: theme().success }) }, " ✓") : null,
     ),
     entry.usage
       ? Gauges(api, store, entry.usage)
@@ -273,38 +273,34 @@ function CacheView(api, sessionID) {
       overrides: api.options.cacheMinutes,
     }),
   )
-  // Rebuild the row only when the status changes; the countdown updates in place.
-  const status = createMemo(() => state().status)
-  const barWidth = LAYOUT_WIDTH - CACHE_LABEL_WIDTH - 1 - CACHE_TEXT_WIDTH
-  return () => {
-    const current = status()
-    if (current === "none") return null
-    const label = h("text", { fg: () => theme().muted }, "Cache".padEnd(CACHE_LABEL_WIDTH))
-    if (current === "expired") {
-      return h(
-        "box",
-        { flexDirection: "row" },
-        label,
-        h("text", { fg: () => theme().muted }, `${"─".repeat(barWidth)} ${"expired".padStart(CACHE_TEXT_WIDTH)}`),
-      )
-    }
-    // Colour by how much of the lifetime has passed, like the usage gauges.
-    const color = () => levelColor((1 - state().fraction) * 100, theme())
-    const bar = () => gauge(state().fraction * 100, barWidth)
-    const text = () => (state().status === "running" ? "active" : formatCountdown(state().remainingMs))
-    return h(
-      "box",
-      { flexDirection: "row" },
-      label,
-      h(
-        "text",
-        { flexShrink: 0, width: barWidth + 1 + CACHE_TEXT_WIDTH, wrapMode: "none" },
-        h("span", { style: () => ({ fg: color() }) }, () => bar().fill),
-        h("span", { style: () => ({ fg: theme().muted }) }, () => bar().track),
-        h("span", { style: () => ({ fg: theme().muted }) }, () => ` ${text().padStart(CACHE_TEXT_WIDTH)}`),
-      ),
-    )
+  // Rebuild the row only when it appears or disappears; the countdown updates in place.
+  const visible = createMemo(() => state().status !== "none")
+  const text = () => {
+    const current = state()
+    if (current.status === "running") return "active"
+    if (current.status === "expired") return "expired"
+    return formatCountdown(current.remainingMs)
   }
+  // The time turns red in the last two minutes; "active" and "expired" stay muted.
+  const color = () => {
+    const current = state()
+    if (current.status === "warm") return current.remainingMs < CACHE_WARNING_MS ? theme().error : theme().text
+    return theme().muted
+  }
+  return () =>
+    visible()
+      ? h(
+          "box",
+          { flexDirection: "column" },
+          h("text", {}, " "),
+          h(
+            "text",
+            { wrapMode: "none" },
+            h("span", { style: () => ({ fg: theme().muted }) }, "Cache".padEnd(CACHE_LABEL_WIDTH)),
+            h("span", { style: () => ({ fg: color() }) }, text),
+          ),
+        )
+      : null
 }
 
 function SidebarView(api, store, sessionID) {
@@ -314,13 +310,13 @@ function SidebarView(api, store, sessionID) {
     "box",
     { flexDirection: "column" },
     h("text", { fg: () => theme().text, attributes: TextAttributes.BOLD }, "Usage"),
-    CacheView(api, sessionID),
     () => {
       const accounts = store.accounts()
       if (!accounts) return h("text", { fg: () => theme().muted }, "Loading...")
       if (accounts.length === 0) return h("text", { fg: () => theme().muted }, "No Claude or ChatGPT login")
       return accounts.map((account) => AccountView(api, store, account))
     },
+    CacheView(api, sessionID),
   )
 }
 

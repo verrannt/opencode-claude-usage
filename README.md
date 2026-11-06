@@ -4,25 +4,26 @@ An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your subscripti
 
 ```text
 Usage
-Cache ████████████▍░░░░░  41m12s
 Claude
 5h  ███▍░░░░░░░  7d  █▎░░░░░░░░░
 31% · 2h10m        11% · 1d17h
 Codex · OpenAI
 5h  ───────────  7d  ███████▎░░░
 n/a                66% · 4d16h
-Codex · OpenAI 2 ●
+Codex · OpenAI 2 ✓
 5h  ───────────  7d  ▎░░░░░░░░░░
 n/a                2% · 6d23h
+
+Cache 41m12s
 ```
 
 It's meant for people who use OpenCode with subscription logins rather than API keys: the **Claude Agent** provider, which signs in with Claude Code (`claude auth login`), and the **OpenAI** provider's **Sign in with ChatGPT**. The presentation is adapted from [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which shows Codex usage for the Codex CLI's account (see [Credits](#credits)).
 
 ## Features
 
-- **All your accounts**: Claude, plus one section per ChatGPT login stored in OpenCode, labelled with the name OpenCode gave the login. With several ChatGPT logins, `●` marks the one OpenCode currently uses.
+- **All your accounts**: Claude, plus one section per ChatGPT login stored in OpenCode, labelled with the name OpenCode gave the login. With several ChatGPT logins, `✓` marks the one OpenCode currently uses.
 - **Same layout for every account**: a 5-hour and a 7-day column, with time until each window resets. When a plan has no 5-hour window (some Codex plans only have a weekly one), that column shows a dashed bar and `n/a`.
-- **Prompt-cache countdown**: an estimate of how long the current session's prompt cache stays warm, counting down every second from the session's last model request (`active` while a request runs, `expired` afterwards). See [Prompt cache estimate](#prompt-cache-estimate).
+- **Prompt-cache countdown**: an estimate of how long the current session's prompt cache stays warm, counting down every second from the session's last model request. The time turns red in the last two minutes; it shows `active` while a request runs and `expired` afterwards. See [Prompt cache estimate](#prompt-cache-estimate).
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
 - **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window of the account the session uses, e.g. `Claude 5h 31%` or `Codex 7d 2%`.
 - **Gentle on rate limits**: refreshes every 5 minutes by default, shares one cache and request schedule per account across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when an endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
