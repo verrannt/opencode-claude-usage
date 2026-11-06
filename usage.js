@@ -49,15 +49,24 @@ export function windowLabel(seconds) {
 
 // The usage endpoints are rate limited per account, so every OpenCode window and plugin reload
 // shares one cache file per account (usage numbers only, never credentials) and one schedule.
-export function cachePath(key) {
+export function cachePath(key, legacy = false) {
   const name = String(key).replace(/[^\w.-]/g, "_")
-  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "opencode-claude-usage", `${name}.json`)
+  const directory = legacy ? "opencode-claude-usage" : "opencode-subscription-usage"
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), directory, `${name}.json`)
 }
 
-async function readCache(path) {
+async function readCache(path, legacyPath) {
   try {
     return JSON.parse(await readFile(path, "utf8"))
-  } catch {
+  } catch (error) {
+    // Adopt the old cache without dropping a rate-limit backoff or fetching just for the rename.
+    if (error.code === "ENOENT" && legacyPath) {
+      const legacy = await readCache(legacyPath)
+      if (Object.keys(legacy).length) {
+        await writeCache(path, legacy)
+        return legacy
+      }
+    }
     return {}
   }
 }
@@ -81,8 +90,8 @@ export function nextFetchAt(cache, intervalMs, force = false) {
 
 // Returns the shared cache entry, fetching first when a request is due. Failures are
 // recorded in the entry (keeping the last good usage) instead of thrown.
-export async function loadUsage({ intervalMs, fetcher, path, force = false, now = Date.now }) {
-  const cache = await readCache(path)
+export async function loadUsage({ intervalMs, fetcher, path, legacyPath, force = false, now = Date.now }) {
+  const cache = await readCache(path, legacyPath)
   if (now() < nextFetchAt(cache, intervalMs, force)) return cache
   // Claim the attempt before fetching so other windows don't request at the same time.
   await writeCache(path, { ...cache, attemptAt: now() })

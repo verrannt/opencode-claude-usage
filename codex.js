@@ -38,7 +38,7 @@ export async function fetchCodexUsage(credential, now = Date.now()) {
   const { access, expires, metadata } = credential.value
   // Skip the request for a token we know has expired.
   if (expires && expires <= now) throw new UsageError(EXPIRED_MESSAGE, { code: "expired" })
-  const headers = { Authorization: `Bearer ${access}`, "User-Agent": "opencode-claude-usage" }
+  const headers = { Authorization: `Bearer ${access}`, "User-Agent": "opencode-subscription-usage" }
   if (metadata?.accountID) headers["ChatGPT-Account-Id"] = metadata.accountID
   return parseCodexUsage(await requestJson(USAGE_URL, headers))
 }

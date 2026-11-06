@@ -1,23 +1,27 @@
 {
-  "name": "opencode-claude-usage",
+  "name": "opencode-subscription-usage",
   "version": "0.1.0",
-  "description": "OpenCode TUI sidebar plugin that shows Claude subscription 5-hour and 7-day usage gauges with reset times.",
+  "description": "Provider-agnostic OpenCode sidebar for Claude and ChatGPT/Codex subscriptions: multi-account usage limits, reset times, and a prompt-cache countdown.",
   "keywords": [
     "claude",
     "claude-code",
     "anthropic",
+    "codex",
+    "chatgpt",
+    "openai",
+    "subscription",
     "opencode",
     "opencode-plugin",
     "tui",
     "usage"
   ],
-  "homepage": "https://github.com/verrannt/opencode-claude-usage#readme",
+  "homepage": "https://github.com/verrannt/opencode-subscription-usage#readme",
   "bugs": {
-    "url": "https://github.com/verrannt/opencode-claude-usage/issues"
+    "url": "https://github.com/verrannt/opencode-subscription-usage/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/verrannt/opencode-claude-usage.git"
+    "url": "git+https://github.com/verrannt/opencode-subscription-usage.git"
   },
   "license": "MIT",
   "author": "Pascal Schröder",

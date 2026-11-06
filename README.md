@@ -1,6 +1,6 @@
-# opencode-claude-usage
+# opencode-subscription-usage
 
-An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your subscription usage as compact gauges with reset countdowns: your Claude plan's 5-hour and 7-day windows, and the Codex limits of every ChatGPT account you've signed in to in OpenCode.
+A provider-agnostic [OpenCode](https://opencode.ai) TUI sidebar for **Claude and ChatGPT/Codex subscriptions**. See all your accounts' usage limits and reset times together, plus a prompt-cache countdown for the current session. Currently supports Claude Code/Claude Agent logins and OpenCode's ChatGPT logins—not arbitrary providers or API-key billing.
 
 ```text
 Usage
@@ -27,7 +27,7 @@ It's meant for people who use OpenCode with subscription logins rather than API 
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
 - **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window of the account the session uses, e.g. `Claude 5h 31%` or `Codex 7d 2%`.
 - **Gentle on rate limits**: refreshes every 5 minutes by default, shares one cache and request schedule per account across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when an endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
-- **Manual refresh**: `/claude-usage` or **Refresh subscription usage** in the command palette (at most every 30 seconds per account, never during a backoff).
+- **Manual refresh**: `/subscription-usage` or **Refresh subscription usage** in the command palette (at most every 30 seconds per account, never during a backoff).
 - **No build step or dependencies**: plain JavaScript against the OpenCode-provided Solid/OpenTUI runtime.
 
 ## Requirements
@@ -43,17 +43,17 @@ Accounts you haven't signed in to are left out.
 ### With the OpenCode CLI
 
 ```sh
-opencode plugin add github:verrannt/opencode-claude-usage
+opencode plugin add github:verrannt/opencode-subscription-usage
 ```
 
-This installs the plugin from GitHub and adds `"github:verrannt/opencode-claude-usage"` to the `plugins` list in `~/.config/opencode/cli.json`. Update it later with `opencode plugin update`.
+This installs the plugin from GitHub and adds `"github:verrannt/opencode-subscription-usage"` to the `plugins` list in `~/.config/opencode/cli.json`. Update it later with `opencode plugin update`.
 
 If you also use `@davidaayers/opencode-codex-usage-plugin`, you can remove it: this plugin already shows that account's Codex usage, as long as it's also signed in to OpenCode.
 
 ### From source
 
 ```sh
-git clone https://github.com/verrannt/opencode-claude-usage.git
+git clone https://github.com/verrannt/opencode-subscription-usage.git
 ```
 
 Then either point `cli.json` at the clone:
@@ -61,11 +61,17 @@ Then either point `cli.json` at the clone:
 ```jsonc
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["/absolute/path/to/opencode-claude-usage"],
+  "plugins": ["/absolute/path/to/opencode-subscription-usage"],
 }
 ```
 
-or copy `tui.js`, `usage.js`, `claude.js`, `codex.js`, `cache.js` and `package.json` into `~/.config/opencode/plugins/claude-usage/`, where OpenCode discovers plugins without any configuration. Use only one of these, or the plugin loads twice.
+or copy `tui.js`, `usage.js`, `claude.js`, `codex.js`, `cache.js` and `package.json` into `~/.config/opencode/plugins/subscription-usage/`, where OpenCode discovers plugins without any configuration. Include `LICENSE` and `THIRD_PARTY_NOTICES.md` with any redistributed copy. Use only one loading method, or the plugin loads twice.
+
+### Upgrading from the old name
+
+This project was previously called `opencode-claude-usage`. GitHub redirects the old repository URL, but replace the existing plugin entry in `cli.json` with `github:verrannt/opencode-subscription-usage` (or your renamed local directory). Don't add a second entry for the same plugin. If you use a discovery directory, rename it from `claude-usage` to `subscription-usage`.
+
+The new cache directory automatically adopts existing usage and rate-limit backoff from the old directory. `/claude-usage` remains an alias for `/subscription-usage`.
 
 ## Configuration
 
@@ -76,7 +82,7 @@ Pass options with the object form in `cli.json`:
   "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     {
-      "package": "github:verrannt/opencode-claude-usage",
+      "package": "github:verrannt/opencode-subscription-usage",
       "options": { "compact": true },
     },
   ],
@@ -98,7 +104,7 @@ To rename a Codex section, rename the login in OpenCode; the plugin uses its lab
 - **ChatGPT credentials**: the plugin lists OpenCode's stored logins through OpenCode's own client API (`credential.list`) and uses the access token of each **Sign in with ChatGPT** login. API-key logins are ignored. The tokens are only sent to `chatgpt.com`.
 - **Codex usage**: `GET https://chatgpt.com/backend-api/wham/usage`, the endpoint the Codex CLI reads for its rate limits.
 - **No token refresh**: the plugin never refreshes a token itself, because rotating a refresh token could sign Claude Code or OpenCode out. OpenCode refreshes a ChatGPT login when it uses that account, so a login you haven't used for about a week (the token lifetime) shows `Login expired · use it once` and keeps its last numbers until you switch to it once. The same applies to Claude.
-- **Shared cache**: the latest result and request schedule for each account live in `~/.cache/opencode-claude-usage/` (or under `$XDG_CACHE_HOME`), one file per account named `claude.json` or `codex-<credential id>.json`. They hold usage numbers and timestamps only, never credentials. Every OpenCode window reads them every 30 seconds and only sends a request when one is due, so several windows cost no more requests than one.
+- **Shared cache**: the latest result and request schedule for each account live in `~/.cache/opencode-subscription-usage/` (or under `$XDG_CACHE_HOME`), one file per account named `claude.json` or `codex-<credential id>.json`. They hold usage numbers and timestamps only, never credentials. Every OpenCode window reads them every 30 seconds and only sends a request when one is due. On upgrade, a missing account cache is copied from `~/.cache/opencode-claude-usage/`, preserving its backoff; existing files in the new directory take precedence. The legacy files are left untouched.
 - **Rate limits**: the endpoints are rate limited per account, and Claude Code's own `/usage` counts against the same Claude limit. On HTTP 429 the plugin waits 5 minutes, doubling up to 30 minutes on repeated 429s, or longer if the server sends a `retry-after`.
 
 ## Prompt cache estimate

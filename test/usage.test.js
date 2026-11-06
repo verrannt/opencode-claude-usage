@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { mkdtemp, readFile } from "node:fs/promises"
+import { mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { parseClaudeUsage } from "../claude.js"
 import { fetchCodexUsage, isCodexCredential, parseCodexUsage } from "../codex.js"
@@ -22,7 +22,7 @@ const MIN = 60_000
 const USAGE = { windows: [{ label: "5h", usedPercent: 6, resetsAt: null }] }
 
 async function harness() {
-  const path = join(await mkdtemp(join(tmpdir(), "claude-usage-")), "usage.json")
+  const path = join(await mkdtemp(join(tmpdir(), "subscription-usage-")), "usage.json")
   const clock = { t: 1_000_000 }
   const calls = { n: 0 }
   let result = () => USAGE
@@ -98,8 +98,42 @@ test("rate limiting backs off, keeps the last usage and blocks forced refreshes"
 
 test("cachePath gives each account its own file", () => {
   assert.notEqual(cachePath("claude"), cachePath("codex-cred_1"))
-  assert.match(cachePath("codex-cred_1"), /opencode-claude-usage[\\/]codex-cred_1\.json$/)
+  assert.match(cachePath("codex-cred_1"), /opencode-subscription-usage[\\/]codex-cred_1\.json$/)
+  assert.match(cachePath("codex-cred_1", true), /opencode-claude-usage[\\/]codex-cred_1\.json$/)
   assert.match(cachePath("../x"), /\.\._x\.json$/)
+})
+
+test("renaming adopts the legacy usage and backoff without a request, even when forced", async () => {
+  const { path, clock, calls, load } = await harness()
+  const legacyPath = join(dirname(path), "legacy.json")
+  const legacy = {
+    usage: USAGE,
+    attemptAt: clock.t - 10 * MIN,
+    retryAt: clock.t + 20 * MIN,
+    failures: 3,
+    rateLimited: true,
+    error: "Rate limited",
+  }
+  await writeFile(legacyPath, JSON.stringify(legacy))
+  assert.deepEqual(await load({ legacyPath, force: true }), legacy)
+  assert.equal(calls.n, 0)
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), legacy)
+  assert.deepEqual(JSON.parse(await readFile(legacyPath, "utf8")), legacy)
+})
+
+test("the current cache takes precedence over the legacy one", async () => {
+  const { path, calls, load } = await harness()
+  const current = await load()
+  const legacyPath = join(dirname(path), "legacy.json")
+  await writeFile(legacyPath, JSON.stringify({ usage: { windows: [] } }))
+  assert.deepEqual(await load({ legacyPath }), current)
+  assert.equal(calls.n, 1)
+})
+
+test("a missing legacy cache doesn't prevent the initial fetch", async () => {
+  const { path, calls, load } = await harness()
+  assert.deepEqual((await load({ legacyPath: `${path}.missing` })).usage, USAGE)
+  assert.equal(calls.n, 1)
 })
 
 test("errors record their code so the sidebar can hide or explain them", async () => {

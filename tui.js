@@ -124,7 +124,13 @@ function createStore(api) {
       const discovered = await discoverAccounts(api)
       const entries = await Promise.all(
         discovered.map((account) =>
-          loadUsage({ intervalMs: refreshMs(api), force, path: cachePath(account.key), fetcher: account.fetch }).catch(
+          loadUsage({
+            intervalMs: refreshMs(api),
+            force,
+            path: cachePath(account.key),
+            legacyPath: cachePath(account.key, true),
+            fetcher: account.fetch,
+          }).catch(
             (error) => ({ error: error?.message ?? "Usage unavailable" }),
           ),
         ),
@@ -349,7 +355,7 @@ function CompactView(api, store, sessionID) {
 }
 
 export default Plugin.define({
-  id: "claude-usage",
+  id: "subscription-usage",
   setup(api) {
     const store = createStore(api)
     const sidebar = api.ui.slot({
@@ -365,11 +371,11 @@ export default Plugin.define({
       mode: "global",
       commands: [
         {
-          id: "claude-usage.refresh",
+          id: "subscription-usage.refresh",
           title: "Refresh subscription usage",
           group: "Usage",
           palette: true,
-          slash: { name: "claude-usage" },
+          slash: { name: "subscription-usage", aliases: ["claude-usage"] },
           run: () => store.refresh(true),
         },
       ],
