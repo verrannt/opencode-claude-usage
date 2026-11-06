@@ -1,74 +1,34 @@
-// Claude subscription usage (5h session / 7d weekly) via the same endpoint Claude Code's /usage uses.
-// Credentials come from Claude Code's own login (`claude auth login`), which opencode's
-// "Claude Agent" provider also uses. We only read the access token; we never refresh it,
-// because rotating the refresh token here would log Claude Code out.
-import { execFile } from "node:child_process"
+// Shared pieces for every account: request/error handling, the cross-window cache with
+// rate-limit backoff, and formatting. Usage is normalised to
+// { windows: [{ label: "5h" | "7d" | ..., usedPercent, resetsAt (ms) }] }.
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
-const USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-const KEYCHAIN_SERVICE = "Claude Code-credentials"
 const FORCE_MIN_MS = 30_000
 const BACKOFF_MIN_MS = 5 * 60_000
 const BACKOFF_MAX_MS = 30 * 60_000
 
 export class UsageError extends Error {
-  constructor(message, { rateLimited = false, retryAfterMs = 0 } = {}) {
+  // code: "no_login" | "expired" | undefined
+  constructor(message, { code, rateLimited = false, retryAfterMs = 0 } = {}) {
     super(message)
+    this.code = code
     this.rateLimited = rateLimited
     this.retryAfterMs = retryAfterMs
   }
 }
 
-function run(command, args) {
-  return new Promise((resolve, reject) => {
-    execFile(command, args, { timeout: 5000 }, (error, stdout) => (error ? reject(error) : resolve(stdout)))
-  })
-}
+export const EXPIRED_MESSAGE = "Login expired · use it once"
 
-export async function readCredentials() {
-  if (process.platform === "darwin") {
-    try {
-      const raw = await run("security", ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"])
-      const oauth = JSON.parse(raw).claudeAiOauth
-      if (oauth?.accessToken) return oauth
-    } catch {}
-  }
-  const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")
-  try {
-    const oauth = JSON.parse(await readFile(join(dir, ".credentials.json"), "utf8")).claudeAiOauth
-    if (oauth?.accessToken) return oauth
-  } catch {}
-  throw new UsageError("No Claude login; run `claude auth login`")
-}
-
-function toWindow(raw) {
-  if (!raw || typeof raw.utilization !== "number") return null
-  const resetsAt = raw.resets_at ? Date.parse(raw.resets_at) : NaN
-  return { usedPercent: raw.utilization, resetsAt: Number.isFinite(resetsAt) ? resetsAt : null }
-}
-
-export function parseUsage(body) {
-  return { fiveHour: toWindow(body?.five_hour), sevenDay: toWindow(body?.seven_day) }
-}
-
-export async function fetchUsage() {
-  const { accessToken } = await readCredentials()
+export async function requestJson(url, headers) {
   let response
   try {
-    response = await fetch(USAGE_URL, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "anthropic-beta": "oauth-2025-04-20",
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(10000),
-    })
+    response = await fetch(url, { headers, signal: AbortSignal.timeout(10000) })
   } catch (error) {
-    throw new UsageError(`Usage request failed: ${error?.message ?? error}`)
+    throw new UsageError(`Request failed: ${error?.message ?? error}`)
   }
-  if (response.status === 401) throw new UsageError("Claude login expired; use Claude once to refresh")
+  if (response.status === 401) throw new UsageError(EXPIRED_MESSAGE, { code: "expired" })
   if (response.status === 429) {
     const seconds = Number(response.headers.get("retry-after"))
     throw new UsageError("Rate limited", {
@@ -76,14 +36,22 @@ export async function fetchUsage() {
       retryAfterMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0,
     })
   }
-  if (!response.ok) throw new UsageError(`Usage request failed (${response.status})`)
-  return parseUsage(await response.json())
+  if (!response.ok) throw new UsageError(`Request failed (${response.status})`)
+  return response.json()
 }
 
-// The endpoint is rate limited per account, so every OpenCode window and plugin reload shares
-// one cache file (usage numbers only, never credentials) and one request schedule.
-export function cachePath() {
-  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "opencode-claude-usage", "usage.json")
+// "5h", "7d", or the nearest whole hours/days for windows we don't know yet.
+export function windowLabel(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "?"
+  if (seconds % 86400 === 0) return `${seconds / 86400}d`
+  return `${Math.round(seconds / 3600)}h`
+}
+
+// The usage endpoints are rate limited per account, so every OpenCode window and plugin reload
+// shares one cache file per account (usage numbers only, never credentials) and one schedule.
+export function cachePath(key) {
+  const name = String(key).replace(/[^\w.-]/g, "_")
+  return join(process.env.XDG_CACHE_HOME || join(homedir(), ".cache"), "opencode-claude-usage", `${name}.json`)
 }
 
 async function readCache(path) {
@@ -113,7 +81,7 @@ export function nextFetchAt(cache, intervalMs, force = false) {
 
 // Returns the shared cache entry, fetching first when a request is due. Failures are
 // recorded in the entry (keeping the last good usage) instead of thrown.
-export async function loadUsage({ intervalMs, force = false, now = Date.now, fetcher = fetchUsage, path = cachePath() }) {
+export async function loadUsage({ intervalMs, fetcher, path, force = false, now = Date.now }) {
   const cache = await readCache(path)
   if (now() < nextFetchAt(cache, intervalMs, force)) return cache
   // Claim the attempt before fetching so other windows don't request at the same time.
@@ -128,6 +96,7 @@ export async function loadUsage({ intervalMs, force = false, now = Date.now, fet
       attemptAt: now(),
       failures,
       error: error?.message ?? "Usage unavailable",
+      code: error?.code,
       rateLimited: error?.rateLimited === true,
       retryAt: error?.rateLimited ? now() + backoffMs(failures, error.retryAfterMs) : undefined,
     }
@@ -151,14 +120,14 @@ export function shortReset(resetsAt, now = Date.now()) {
   return `${Math.floor(hours / 24)}d${hours % 24}h`
 }
 
-// Adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see THIRD_PARTY_NOTICES.md.
-// Status note shown under the gauges, or alone before any usage has loaded.
+// Status note shown under an account's gauges, or alone before any usage has loaded.
 export function statusNote(entry, now = Date.now()) {
-  if (!entry.error) return ""
+  if (!entry?.error) return ""
   if (entry.rateLimited && entry.retryAt) return `Rate limited · retry in ${shortReset(entry.retryAt, now)}`
   return entry.error
 }
 
+// Adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see THIRD_PARTY_NOTICES.md.
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█"]
 
 export function gauge(percent, width) {

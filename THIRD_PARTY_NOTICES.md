@@ -10,10 +10,13 @@ by Luca Zani. The adapted parts are:
 
 - `usage.js`: the eighth-block `gauge()` function.
 - `tui.js`: the theme palette and usage-level colours (50/75/90% thresholds), the gauge
-  layout (widths, label/bar row, percent and reset row with truncation), the provider
-  check for a session (`isClaudeSession`), the sidebar visibility check
+  layout (widths, label/bar row, percent and reset row with truncation), the session
+  provider lookup (`sessionProvider`), the sidebar visibility check
   (`isSidebarVisible`), the compact footer text, and how the sidebar and footer views
   are registered.
+
+The Codex usage code in `codex.js` is not from that project; it reads a different
+source (the ChatGPT usage endpoint rather than the Codex app-server).
 
 That project is distributed under the following license:
 

@@ -1,7 +1,7 @@
-// Sidebar gauges for Claude subscription usage (5h + 7d). Plain JS against the opentui
-// Solid runtime, so no JSX build step is needed.
-// The palette, level colours, gauge layout, session/sidebar checks, compact text and slot
-// wiring are adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see
+// Sidebar gauges for subscription usage: Claude (5h + 7d) and every ChatGPT/Codex login stored in
+// OpenCode. Plain JS against the opentui Solid runtime, so no JSX build step is needed.
+// The palette, level colours, gauge layout, session provider and sidebar checks, compact text
+// and slot wiring are adapted from @davidaayers/opencode-codex-usage-plugin (MIT); see
 // THIRD_PARTY_NOTICES.md.
 import { Plugin } from "@opencode/plugin/tui"
 import { TextAttributes } from "@opentui/core"
@@ -15,11 +15,15 @@ import {
   useTerminalDimensions,
 } from "@opentui/solid"
 import { createMemo, createSignal, onCleanup } from "solid-js"
-import { formatPercent, gauge, loadUsage, shortReset, statusNote } from "./usage.js"
+import { fetchClaudeUsage } from "./claude.js"
+import { fetchCodexUsage, isCodexCredential } from "./codex.js"
+import { cachePath, formatPercent, gauge, loadUsage, shortReset, statusNote } from "./usage.js"
 
-const PROVIDER_ID = "claude-agent"
+const CLAUDE_PROVIDER_ID = "claude-agent"
+const OPENAI_PROVIDER_ID = "openai"
 const DEFAULT_REFRESH_MINUTES = 5
-// How often the shared cache file is re-read; a request is only sent when one is due.
+// How often the credential list and the shared cache files are re-read; a usage request is
+// only sent when one is due.
 const TICK_MS = 30_000
 const LAYOUT_WIDTH = 32
 const COLUMN_GAP = 2
@@ -60,15 +64,14 @@ function levelColor(percent, theme) {
   return theme.success
 }
 
-function isClaudeSession(api, sessionID) {
-  if (api.options.always === true) return true
+function sessionProvider(api, sessionID) {
   const messages = api.data.session.message.list(sessionID) ?? []
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
-    if (message?.type === "assistant" && message.model?.providerID) return message.model.providerID === PROVIDER_ID
+    if (message?.type === "assistant" && message.model?.providerID) return message.model.providerID
   }
   const model = api.data.session.get(sessionID)?.model ?? api.ui.model.current()
-  return model?.providerID === PROVIDER_ID
+  return model?.providerID
 }
 
 function isSidebarVisible(api, sessionID, width) {
@@ -81,31 +84,66 @@ function refreshMs(api) {
   return Math.max(1, Number.isFinite(minutes) ? minutes : DEFAULT_REFRESH_MINUTES) * 60_000
 }
 
-// One store shared by every view, backed by the cross-window cache in usage.js. It only
-// touches the cache (and possibly the network) while some view wants data.
+// Claude first, then every ChatGPT login in OpenCode's credential order.
+async function discoverAccounts(api) {
+  const accounts = [{ key: "claude", provider: CLAUDE_PROVIDER_ID, label: "Claude", fetch: fetchClaudeUsage }]
+  let credentials = []
+  try {
+    const response = await api.client.credential.list()
+    credentials = Array.isArray(response) ? response : (response?.data ?? [])
+  } catch {}
+  const codex = credentials.filter(isCodexCredential)
+  for (const credential of codex) {
+    accounts.push({
+      key: `codex-${credential.id}`,
+      provider: OPENAI_PROVIDER_ID,
+      label: `Codex · ${credential.label}`,
+      active: credential.active === true,
+      marked: credential.active === true && codex.length > 1,
+      fetch: () => fetchCodexUsage(credential),
+    })
+  }
+  return accounts
+}
+
+// One store shared by every view, backed by the cross-window cache files in usage.js. It only
+// touches credentials, the cache (and possibly the network) while some view wants data.
 function createStore(api) {
-  const [entry, setEntry] = createSignal({ loading: true })
+  // null while loading; otherwise [{ key, provider, label, active, marked, entry }].
+  const [accounts, setAccounts] = createSignal(null, { equals: (a, b) => JSON.stringify(a) === JSON.stringify(b) })
   const [now, setNow] = createSignal(Date.now())
   let demand = 0
   let inFlight
 
   const refresh = (force = false) => {
     if (demand === 0 || inFlight) return inFlight
-    inFlight = loadUsage({ intervalMs: refreshMs(api), force })
-      .then((next) => setEntry(next))
-      .catch((error) => setEntry((prev) => ({ ...prev, loading: false, error: error?.message ?? "Usage unavailable" })))
-      .finally(() => {
-        inFlight = undefined
-        setNow(Date.now())
-        api.renderer.requestRender()
-      })
+    inFlight = (async () => {
+      const discovered = await discoverAccounts(api)
+      const entries = await Promise.all(
+        discovered.map((account) =>
+          loadUsage({ intervalMs: refreshMs(api), force, path: cachePath(account.key), fetcher: account.fetch }).catch(
+            (error) => ({ error: error?.message ?? "Usage unavailable" }),
+          ),
+        ),
+      )
+      setAccounts(
+        discovered
+          .map(({ fetch, ...account }, i) => ({ ...account, entry: entries[i] }))
+          // Hide Claude entirely when there's no Claude Code login.
+          .filter((account) => !(account.entry.code === "no_login" && !account.entry.usage)),
+      )
+    })().finally(() => {
+      inFlight = undefined
+      setNow(Date.now())
+      api.renderer.requestRender()
+    })
     return inFlight
   }
 
   const tick = setInterval(() => refresh(), TICK_MS)
 
   return {
-    entry,
+    accounts,
     now,
     refresh,
     want() {
@@ -128,7 +166,7 @@ function useDemand(store, active) {
   })
 }
 
-function Gauge(api, store, label, window, width) {
+function Gauge(api, store, window, width) {
   const theme = () => palette(api)
   const color = () => levelColor(window.usedPercent, theme())
   const bar = gauge(window.usedPercent, width - LABEL_WIDTH - 1)
@@ -144,7 +182,7 @@ function Gauge(api, store, label, window, width) {
     h(
       "box",
       { flexDirection: "row" },
-      h("text", { fg: () => theme().muted }, `${label.padEnd(LABEL_WIDTH)} `),
+      h("text", { fg: () => theme().muted }, `${window.label.padEnd(LABEL_WIDTH)} `),
       h(
         "text",
         { flexShrink: 0, width: width - LABEL_WIDTH - 1 },
@@ -162,71 +200,86 @@ function Gauge(api, store, label, window, width) {
 }
 
 function Gauges(api, store, usage) {
-  const windows = [
-    ["5h", usage.fiveHour],
-    ["7d", usage.sevenDay],
-  ].filter(([, window]) => window)
+  const windows = (usage.windows ?? []).slice(0, 2)
   if (windows.length === 0) return h("text", { fg: () => palette(api).muted }, "No usage windows")
   const width = windows.length === 1 ? LAYOUT_WIDTH : (LAYOUT_WIDTH - COLUMN_GAP) / 2
   return h(
     "box",
     { flexDirection: "row", width: LAYOUT_WIDTH, columnGap: COLUMN_GAP },
-    windows.map(([label, window]) => Gauge(api, store, label, window, width)),
+    windows.map((window) => Gauge(api, store, window, width)),
   )
 }
 
-function SidebarView(api, store, sessionID) {
-  const visible = createMemo(() => isClaudeSession(api, sessionID()))
-  useDemand(store, visible)
+function AccountView(api, store, account) {
   const theme = () => palette(api)
-  const usage = createMemo(() => store.entry().usage)
-  const note = () => statusNote(store.entry(), store.now())
+  const { entry } = account
+  const note = () => statusNote(entry, store.now())
   return h(
     "box",
-    { visible },
+    { flexDirection: "column" },
+    h(
+      "text",
+      { width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
+      h("span", { style: () => ({ fg: theme().text }) }, account.label),
+      account.marked ? h("span", { style: () => ({ fg: theme().success }) }, " ●") : null,
+    ),
+    entry.usage
+      ? Gauges(api, store, entry.usage)
+      : note()
+        ? null
+        : h("text", { fg: () => theme().muted }, "No usage yet"),
+    // With numbers on screen, a failure is a muted note; without them it's a warning.
     () =>
-      visible()
+      note()
         ? h(
-            "box",
-            { flexDirection: "column" },
-            h("text", { fg: () => theme().text, attributes: TextAttributes.BOLD }, "Claude Usage"),
-            () => {
-              const current = usage()
-              if (current) return Gauges(api, store, current)
-              if (store.entry().loading) return h("text", { fg: () => theme().muted }, "Loading...")
-              if (!note()) return h("text", { fg: () => theme().muted }, "No usage yet")
-              return null
-            },
-            // With numbers on screen, a failure is a muted note; without them it's a warning.
-            () =>
-              note()
-                ? h(
-                    "text",
-                    { fg: () => (usage() ? theme().muted : theme().warning), width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
-                    note,
-                  )
-                : null,
+            "text",
+            { fg: () => (entry.usage ? theme().muted : theme().warning), width: LAYOUT_WIDTH, wrapMode: "none", truncate: true },
+            note,
           )
-        : h("box"),
+        : null,
   )
+}
+
+function SidebarView(api, store) {
+  useDemand(store, () => true)
+  const theme = () => palette(api)
+  return h(
+    "box",
+    { flexDirection: "column" },
+    h("text", { fg: () => theme().text, attributes: TextAttributes.BOLD }, "Usage"),
+    () => {
+      const accounts = store.accounts()
+      if (!accounts) return h("text", { fg: () => theme().muted }, "Loading...")
+      if (accounts.length === 0) return h("text", { fg: () => theme().muted }, "No Claude or ChatGPT login")
+      return accounts.map((account) => AccountView(api, store, account))
+    },
+  )
+}
+
+// The account the session is using: Claude, or OpenCode's active ChatGPT login.
+function sessionAccount(accounts, providerID) {
+  if (!accounts) return undefined
+  if (providerID === CLAUDE_PROVIDER_ID) return accounts.find((account) => account.provider === CLAUDE_PROVIDER_ID)
+  if (providerID === OPENAI_PROVIDER_ID) return accounts.find((account) => account.provider === OPENAI_PROVIDER_ID && account.active)
+  return undefined
 }
 
 function CompactView(api, store, sessionID) {
   const dimensions = useTerminalDimensions()
+  const provider = createMemo(() => sessionProvider(api, sessionID()))
   const visible = createMemo(
-    () => isClaudeSession(api, sessionID()) && !isSidebarVisible(api, sessionID(), dimensions().width),
+    () =>
+      (provider() === CLAUDE_PROVIDER_ID || provider() === OPENAI_PROVIDER_ID) &&
+      !isSidebarVisible(api, sessionID(), dimensions().width),
   )
   useDemand(store, visible)
   const text = () => {
-    const usage = store.entry().usage
-    if (!usage) return store.entry().loading ? "Claude ..." : ""
-    const windows = [
-      ["5h", usage.fiveHour],
-      ["7d", usage.sevenDay],
-    ].filter(([, window]) => window)
+    const account = sessionAccount(store.accounts(), provider())
+    const windows = account?.entry.usage?.windows ?? []
     if (windows.length === 0) return ""
-    const [label, worst] = windows.reduce((a, b) => (b[1].usedPercent > a[1].usedPercent ? b : a))
-    return `Claude ${label} ${formatPercent(worst.usedPercent)}`
+    const worst = windows.reduce((a, b) => (b.usedPercent > a.usedPercent ? b : a))
+    const name = account.provider === CLAUDE_PROVIDER_ID ? "Claude" : "Codex"
+    return `${name} ${worst.label} ${formatPercent(worst.usedPercent)}`
   }
   return h("box", { visible }, h("text", { fg: () => palette(api).muted }, text))
 }
@@ -237,7 +290,7 @@ export default Plugin.define({
     const store = createStore(api)
     const sidebar = api.ui.slot({
       prepend: "sidebar.content",
-      render: (props) => SidebarView(api, store, () => props.sessionID),
+      render: () => SidebarView(api, store),
     })
     const compact = api.ui.slot({
       append: "prompt.footer.status",
@@ -249,8 +302,8 @@ export default Plugin.define({
       commands: [
         {
           id: "claude-usage.refresh",
-          title: "Refresh Claude usage",
-          group: "Claude",
+          title: "Refresh subscription usage",
+          group: "Usage",
           palette: true,
           slash: { name: "claude-usage" },
           run: () => store.refresh(true),

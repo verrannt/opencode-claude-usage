@@ -28,6 +28,8 @@
   "files": [
     "tui.js",
     "usage.js",
+    "claude.js",
+    "codex.js",
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {

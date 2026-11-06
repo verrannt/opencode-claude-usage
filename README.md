@@ -1,29 +1,39 @@
 # opencode-claude-usage
 
-An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your Claude subscription's 5-hour and 7-day usage as compact gauges with reset countdowns.
+An [OpenCode](https://opencode.ai) TUI sidebar plugin that shows your subscription usage as compact gauges with reset countdowns: your Claude plan's 5-hour and 7-day windows, and the Codex limits of every ChatGPT account you've signed in to in OpenCode.
 
 ```text
-Claude Usage
-5h  █▏░░░░░░░░░  7d  ▉░░░░░░░░░░
-11% · 1h30m        9% · 1d17h
+Usage
+Claude
+5h  ███▍░░░░░░░  7d  █▎░░░░░░░░░
+31% · 2h10m        11% · 1d17h
+Codex · OpenAI
+7d  █████████████████▉░░░░░░░░░
+66% · 4d16h
+Codex · OpenAI 2 ●
+7d  ▌░░░░░░░░░░░░░░░░░░░░░░░░░░
+2% · 6d23h
 ```
 
-It's meant for people who use OpenCode's **Claude Agent** provider, which signs in with Claude Code (`claude auth login`) and counts against your Pro/Max plan limits. The presentation is adapted from [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which does the same for Codex (see [Credits](#credits)).
+It's meant for people who use OpenCode with subscription logins rather than API keys: the **Claude Agent** provider, which signs in with Claude Code (`claude auth login`), and the **OpenAI** provider's **Sign in with ChatGPT**. The presentation is adapted from [@davidaayers/opencode-codex-usage-plugin](https://github.com/davidaayers/opencode-codex-usage-plugin), which shows Codex usage for the Codex CLI's account (see [Credits](#credits)).
 
 ## Features
 
-- **Two gauges**: the 5-hour session window and the 7-day weekly window, with time until each one resets.
+- **All your accounts**: Claude, plus one section per ChatGPT login stored in OpenCode, labelled with the name OpenCode gave the login. With several ChatGPT logins, `●` marks the one OpenCode currently uses.
+- **Every window the service reports**: Claude's 5-hour and 7-day windows; for Codex, whatever your plan has (for example only a weekly window on some plans), with time until each one resets.
 - **Colours from your theme**: `success` below 50%, `accent` from 50%, `warning` from 75%, `error` from 90%.
-- **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window in the prompt footer, e.g. `Claude 5h 11%`.
-- **Gentle on the rate limit**: refreshes every 5 minutes by default, shares one cache and request schedule across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when the endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
-- **Manual refresh**: `/claude-usage` or **Refresh Claude usage** in the command palette (at most every 30 seconds, never during a backoff).
-- **Shows only for Claude Agent sessions**: hidden when the session uses another provider.
+- **Compact footer line**: on narrow terminals (sidebar hidden) or in child sessions, shows the most constrained window of the account the session uses, e.g. `Claude 5h 31%` or `Codex 7d 2%`.
+- **Gentle on rate limits**: refreshes every 5 minutes by default, shares one cache and request schedule per account across all OpenCode windows and plugin reloads, and backs off (5 → 30 minutes) when an endpoint rate limits. The last numbers stay on screen with a short note such as `Rate limited · retry in 5m`.
+- **Manual refresh**: `/claude-usage` or **Refresh subscription usage** in the command palette (at most every 30 seconds per account, never during a backoff).
 - **No build step or dependencies**: plain JavaScript against the OpenCode-provided Solid/OpenTUI runtime.
 
 ## Requirements
 
-- OpenCode 2.x (tested on 2.2.5).
-- A Claude Pro or Max subscription, signed in through Claude Code (`claude auth login`), and the **Claude Agent** provider connected in OpenCode (`/connect`).
+- OpenCode 2.x (tested on 2.2.5), with the TUI on the same machine as your Claude Code login.
+- For Claude: a Pro or Max subscription, signed in through Claude Code (`claude auth login`).
+- For Codex: one or more ChatGPT accounts connected in OpenCode with `/connect` → **OpenAI** → **Sign in with ChatGPT**.
+
+Accounts you haven't signed in to are left out.
 
 ## Install
 
@@ -34,6 +44,8 @@ opencode plugin add github:verrannt/opencode-claude-usage
 ```
 
 This installs the plugin from GitHub and adds `"github:verrannt/opencode-claude-usage"` to the `plugins` list in `~/.config/opencode/cli.json`. Update it later with `opencode plugin update`.
+
+If you also use `@davidaayers/opencode-codex-usage-plugin`, you can remove it: this plugin already shows that account's Codex usage, as long as it's also signed in to OpenCode.
 
 ### From source
 
@@ -50,7 +62,7 @@ Then either point `cli.json` at the clone:
 }
 ```
 
-or copy `tui.js`, `usage.js` and `package.json` into `~/.config/opencode/plugins/claude-usage/`, where OpenCode discovers plugins without any configuration. Use only one of these, or the plugin loads twice.
+or copy `tui.js`, `usage.js`, `claude.js`, `codex.js` and `package.json` into `~/.config/opencode/plugins/claude-usage/`, where OpenCode discovers plugins without any configuration. Use only one of these, or the plugin loads twice.
 
 ## Configuration
 
@@ -68,24 +80,28 @@ Pass options with the object form in `cli.json`:
 }
 ```
 
-| Option    | Type      | Default | Description                                                                     |
-| --------- | --------- | ------- | ------------------------------------------------------------------------------- |
-| `compact` | `boolean` | `false` | Always use the compact footer line, e.g. when you hide the sidebar manually.    |
-| `always`  | `boolean` | `false` | Show usage in every session, not only sessions on the Claude Agent provider.    |
-| `refreshMinutes` | `number` | `5` | Minutes between usage requests (minimum 1). Lower values hit the endpoint's rate limit sooner. |
+| Option           | Type      | Default | Description                                                                                     |
+| ---------------- | --------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `compact`        | `boolean` | `false` | Always use the compact footer line, e.g. when you hide the sidebar manually.                    |
+| `refreshMinutes` | `number`  | `5`     | Minutes between usage requests per account (minimum 1). Lower values hit rate limits sooner.   |
+
+To rename a Codex section, rename the login in OpenCode; the plugin uses its label.
 
 ## How it works
 
-- **Credentials**: the plugin reads Claude Code's OAuth access token, from the macOS keychain (`Claude Code-credentials`) or from `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`) on other systems. The token is only sent to `api.anthropic.com`.
-- **Usage source**: `GET https://api.anthropic.com/api/oauth/usage`, the endpoint behind Claude Code's `/usage` command.
-- **No token refresh**: the plugin never refreshes the token itself, because rotating the refresh token could sign Claude Code out. If the token has expired, the sidebar says so until Claude Code or the Claude Agent provider refreshes it on its next request.
-- **Shared cache**: the latest result and the request schedule live in `~/.cache/opencode-claude-usage/usage.json` (or under `$XDG_CACHE_HOME`). It holds usage numbers and timestamps only, never credentials. Every OpenCode window reads it every 30 seconds and only sends a request when one is due, so several windows cost no more requests than one.
-- **Rate limits**: the endpoint is rate limited per account, and Claude Code's own `/usage` counts against the same limit. On HTTP 429 the plugin waits 5 minutes, doubling up to 30 minutes on repeated 429s, or longer if the server sends a `retry-after`.
+- **Claude credentials**: the plugin reads Claude Code's OAuth access token, from the macOS keychain (`Claude Code-credentials`) or from `~/.claude/.credentials.json` (or `$CLAUDE_CONFIG_DIR/.credentials.json`) on other systems. The token is only sent to `api.anthropic.com`.
+- **Claude usage**: `GET https://api.anthropic.com/api/oauth/usage`, the endpoint behind Claude Code's `/usage` command.
+- **ChatGPT credentials**: the plugin lists OpenCode's stored logins through OpenCode's own client API (`credential.list`) and uses the access token of each **Sign in with ChatGPT** login. API-key logins are ignored. The tokens are only sent to `chatgpt.com`.
+- **Codex usage**: `GET https://chatgpt.com/backend-api/wham/usage`, the endpoint the Codex CLI reads for its rate limits.
+- **No token refresh**: the plugin never refreshes a token itself, because rotating a refresh token could sign Claude Code or OpenCode out. OpenCode refreshes a ChatGPT login when it uses that account, so a login you haven't used for about a week (the token lifetime) shows `Login expired · use it once` and keeps its last numbers until you switch to it once. The same applies to Claude.
+- **Shared cache**: the latest result and request schedule for each account live in `~/.cache/opencode-claude-usage/` (or under `$XDG_CACHE_HOME`), one file per account named `claude.json` or `codex-<credential id>.json`. They hold usage numbers and timestamps only, never credentials. Every OpenCode window reads them every 30 seconds and only sends a request when one is due, so several windows cost no more requests than one.
+- **Rate limits**: the endpoints are rate limited per account, and Claude Code's own `/usage` counts against the same Claude limit. On HTTP 429 the plugin waits 5 minutes, doubling up to 30 minutes on repeated 429s, or longer if the server sends a `retry-after`.
 
 ## Limitations
 
-- The usage endpoint isn't documented or officially supported by Anthropic and may change or disappear.
+- Neither usage endpoint is documented or officially supported by Anthropic or OpenAI; either may change or disappear.
 - If you use `CLAUDE_CONFIG_DIR`, Claude Code may store its keychain entry under a different name; the plugin then falls back to `$CLAUDE_CONFIG_DIR/.credentials.json`.
+- Only ChatGPT logins stored in OpenCode are shown. A Codex CLI login that isn't also signed in to OpenCode isn't.
 
 ## Development
 
@@ -93,7 +109,7 @@ Pass options with the object form in `cli.json`:
 npm test
 ```
 
-`usage.js` holds credential lookup, the API call and formatting, and has unit tests. `tui.js` holds the sidebar and footer views.
+`usage.js` holds request handling, the per-account cache with backoff, and formatting. `claude.js` and `codex.js` read each service's credentials and usage. `tui.js` holds the sidebar and footer views. Everything except `tui.js` has unit tests.
 
 ## Credits
 
